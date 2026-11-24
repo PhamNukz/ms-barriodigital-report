@@ -21,16 +21,28 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
+      # Un grupo por servicio: report-svc recibe todos los mensajes, aparte de audit-svc.
       group-id: report-svc
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      # Envuelve al JsonDeserializer: un JSON ilegible ya no explota dentro del poll (bucle
+      # infinito sobre el mismo offset); llega al error handler, que lo manda a la DLT.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        spring.json.trusted.packages: "*"
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # Solo nuestros DTO; "*" dejaba instanciar cualquier clase.
+        spring.json.trusted.packages: cl.duoc.barriodigital.report.kafka
         spring.json.use.type.headers: false
         spring.json.value.default.type: cl.duoc.barriodigital.report.kafka.TramiteEventIn
+    listener:
+      # 3 hilos = 1 por particion: el grupo reparte las 3 particiones de requests.events.
+      concurrency: 3
 
 barriodigital:
+  kafka:
+    # Lo declara ms-barriodigital-kafkaadmin; la DLT es <topico>.DLT.
+    topics:
+      requests-events: requests.events
   security:
     issuer-uri: ${AAD_ISSUER_URI:https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0}
     audiences:
